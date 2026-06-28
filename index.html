@@ -69,7 +69,12 @@
   .extras { padding: 12px; }
   .extras h3 { margin: 4px 0 8px; font-size: .9rem; }
   .extras .grp { font-size: .76rem; color: var(--muted); margin: 8px 0 3px; font-weight: 700; }
-  .extras .it { font-size: .8rem; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+  .extras .it { font-size: .8rem; padding: 5px 2px; border-bottom: 1px dotted var(--line); }
+  .extras .it.ex-clk { cursor: pointer; border-radius: 6px; transition: .12s; }
+  .extras .it.ex-clk:hover { color: var(--accent); background: #fff7f6; padding-left: 6px; }
+  .extras .pin-mini { font-size: .7rem; opacity: .55; }
+  .extras .cand-toggle { display:flex; align-items:center; gap:6px; font-size:.78rem; color:var(--muted); margin:2px 0 10px; cursor:pointer; }
+  .extras .cand-dot { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px; border:2px dashed #999; border-radius:50%; font-size:9px; background:#fff; }
 
   .leaflet-popup-content { font-size: .85rem; }
   .pop-cat { display:inline-block; font-size:.7rem; color:#fff; padding:1px 7px; border-radius:10px; margin-bottom:4px; }
@@ -138,9 +143,33 @@ const DAYS = [
 
 // 동선상 미배정 — 취향따라 교체할 후보들
 const EXTRAS = [
-  { grp: "🌊 물놀이 대체 (메인 물놀이 장소 바꾸고 싶을 때)", items: ["서부: 판포포구 · 월령포구 · 황우치 · 하모", "동부: 하도 · 신흥(함덕) · 평대 · 소금막", "성산·남부 핫플: 표선해비치 · 광치기(일출) · 화순금모래"] },
-  { grp: "🍴 라이트 — 아침·점심용", items: ["중문생선구이 (생선구이)", "공천포식당 (된장 물회)", "옛날순대 (순대국밥)", "유달 (짱개)", "산지해장국 (소고기 해장국)", "파도식당 (고기국수)"] },
-  { grp: "🍴 든든 — 저녁용", items: ["삼남매식당 (막창전골)", "상록식당 (양념돼지고기)", "들렁모루 (오리탕)", "윌라라 (피쉬앤칩스)"] },
+  { grp: "물놀이 대체", color: "#1e90ff", emoji: "🌊", items: [
+    { n: "판포포구 (서부)", lat: 33.3653292, lng: 126.1997151 },
+    { n: "월령포구 (서부)", lat: 33.3784402, lng: 126.2163789 },
+    { n: "황우치해안 (서부)", lat: 33.2373394, lng: 126.3169839 },
+    { n: "하모해수욕장 (서부)", lat: 33.2110709, lng: 126.260619 },
+    { n: "하도해변 (동부)", lat: 33.5129078, lng: 126.8988182 },
+    { n: "신흥해변 (함덕)", lat: 33.548935, lng: 126.6496044 },
+    { n: "평대해변 (동부)", lat: 33.5334868, lng: 126.8409569 },
+    { n: "소금막해변 (표선)", lat: 33.3311757, lng: 126.8424558 },
+    { n: "표선해비치 (핫플)", lat: 33.3245, lng: 126.8345 },
+    { n: "광치기해변 (일출)", lat: 33.4495, lng: 126.9335 },
+    { n: "화순금모래해변", lat: 33.2349, lng: 126.338 },
+  ]},
+  { grp: "라이트 — 아침·점심", color: "#1f9d63", emoji: "🥢", items: [
+    { n: "중문생선구이 (생선구이)", lat: 33.249214, lng: 126.4301451 },
+    { n: "공천포식당 (된장 물회)", lat: 33.2664055, lng: 126.6426731 },
+    { n: "옛날순대 (순대국밥)", lat: 33.2583991, lng: 126.5598738 },
+    { n: "유달 (짱개)", lat: 33.2622222, lng: 126.6205556 },
+    { n: "산지해장국 (소고기 해장국)", lat: 33.5163515, lng: 126.5285668 },
+    { n: "파도식당 (고기국수)", lat: 33.5113111, lng: 126.5305255 },
+  ]},
+  { grp: "든든 — 저녁", color: "#cc5e22", emoji: "🍖", items: [
+    { n: "삼남매식당 (막창전골)", lat: 33.4753434, lng: 126.547034 },
+    { n: "상록식당 (양념돼지고기)", lat: 33.2688784, lng: 126.587615 },
+    { n: "들렁모루 (오리탕)", lat: 33.2805336, lng: 126.5448678 },
+    { n: "윌라라 (피쉬앤칩스)", lat: 33.4628445, lng: 126.9329878 },
+  ]},
 ];
 
 /* ---------- 방문 순서 번호 (지도와 무관하게 먼저 부여) ---------- */
@@ -153,6 +182,7 @@ DAYS.forEach((day) => {
 const hasLeaflet = typeof L !== "undefined" && L && typeof L.map === "function";
 let map = null;
 const dayLayers = {};
+let extrasLayer = null;
 
 function showMapError() {
   const el = document.getElementById("map");
@@ -214,6 +244,20 @@ if (hasLeaflet) {
     L.polyline(routePts, { color: day.color, weight: 3, opacity: .5, dashArray: "6,9" }).addTo(layer);
     dayLayers[day.key] = layer;
   });
+
+  // 대체 후보 마커 (점선 동그라미 — 메인 마커와 구분)
+  const candIcon = (color, emoji) => L.divIcon({
+    className: "",
+    html: `<div style="width:21px;height:21px;border-radius:50%;background:rgba(255,255,255,.95);border:2px dashed ${color};display:flex;align-items:center;justify-content:center;font-size:10px;box-shadow:0 1px 3px rgba(0,0,0,.22)">${emoji}</div>`,
+    iconSize: [21, 21], iconAnchor: [10, 10], popupAnchor: [0, -10],
+  });
+  extrasLayer = L.layerGroup();
+  EXTRAS.forEach((g) => g.items.forEach((it) => {
+    const m = L.marker([it.lat, it.lng], { icon: candIcon(g.color, g.emoji), zIndexOffset: -500, opacity: .9 });
+    m.bindPopup(`<span class="pop-cat" style="background:${g.color}">${g.emoji} 대체 후보</span><br><b>${it.n}</b><br><a href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}" target="_blank">길찾기 →</a>`);
+    it._marker = m; extrasLayer.addLayer(m);
+  }));
+  extrasLayer.addTo(map);
  } catch (err) {
   map = null;
   showMapError();
@@ -263,14 +307,25 @@ DAYS.forEach((day) => {
   dayCards[day.key] = card;
 });
 
-// extras
+// extras (누르면 지도 이동 — 지도엔 영구 마커 없이 임시 팝업만)
 const extrasEl = document.getElementById("extras");
-let ex = `<h3>🍴 미배정 맛집 후보 <span style="font-weight:400;color:var(--muted);font-size:.78rem">(이번 동선과 떨어짐)</span></h3>`;
-EXTRAS.forEach((g) => {
-  ex += `<div class="grp">${g.grp}</div>`;
-  g.items.forEach((it) => { ex += `<div class="it">${it}</div>`; });
+let ex = `<h3>📍 대체 후보 <span style="font-weight:400;color:var(--muted);font-size:.78rem">(점선 마커 · 누르면 지도 이동)</span></h3>`;
+ex += `<label class="cand-toggle"><input type="checkbox" id="toggleCand" checked> 지도에 후보 표시</label>`;
+EXTRAS.forEach((g, gi) => {
+  ex += `<div class="grp"><span class="cand-dot" style="border-color:${g.color}">${g.emoji}</span> ${g.grp}</div>`;
+  g.items.forEach((it, ii) => {
+    ex += `<div class="it ex-clk" data-g="${gi}" data-i="${ii}">${it.n} <span class="pin-mini">📍</span></div>`;
+  });
 });
 extrasEl.innerHTML = ex;
+extrasEl.querySelectorAll(".ex-clk").forEach((el) => {
+  el.onclick = () => flyToExtra(EXTRAS[+el.dataset.g].items[+el.dataset.i]);
+});
+const toggleCand = document.getElementById("toggleCand");
+if (toggleCand) toggleCand.onchange = () => {
+  if (!map || !extrasLayer) return;
+  if (toggleCand.checked) extrasLayer.addTo(map); else map.removeLayer(extrasLayer);
+};
 
 // 클릭 → 지도 이동
 function flyToStop(day, pred) {
@@ -278,6 +333,13 @@ function flyToStop(day, pred) {
   if (!s || !map || !s._marker) return;
   map.flyTo([s.lat, s.lng], 14, { duration: .6 });
   s._marker.openPopup();
+}
+// 대체 후보 클릭 → 좌표로 이동 + 해당 후보 마커 팝업
+function flyToExtra(it) {
+  if (!map) { window.open(`https://www.google.com/maps/search/?api=1&query=${it.lat},${it.lng}`, "_blank"); return; }
+  map.flyTo([it.lat, it.lng], 14, { duration: .6 });
+  if (it._marker && extrasLayer && map.hasLayer(extrasLayer)) it._marker.openPopup();
+  else L.popup({ closeButton: true }).setLatLng([it.lat, it.lng]).setContent(`<b>${it.n}</b><br><a href="https://www.google.com/maps/dir/?api=1&destination=${it.lat},${it.lng}" target="_blank">길찾기 →</a>`).openOn(map);
 }
 daysEl.querySelectorAll(".place-card").forEach((el) => {
   el.onclick = () => flyToStop(DAYS.find((d) => d.key === el.dataset.day), (x) => x.k === "p" && x._order == el.dataset.order);
